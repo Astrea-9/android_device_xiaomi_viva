@@ -69,7 +69,7 @@ jobs:
         with:
           path: device-tree
 
-            - name: Check kernel files
+      - name: Check kernel files
         if: ${{ !inputs.skip_kernel_check }}
         run: |
           if [ ! -f device-tree/prebuilt/Image.gz ] || ! ls device-tree/prebuilt/dtb/*.dtb >/dev/null 2>&1; then
