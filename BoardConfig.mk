@@ -41,6 +41,9 @@ TARGET_USERIMAGES_USE_F2FS := true
 # Display / Graphics
 TARGET_SCREEN_DENSITY := 440
 
+# Recovery as Boot (Cihazda ayrı recovery bölümü yok, boot içine kurulur)
+BOARD_USES_RECOVERY_AS_BOOT := true
+
 # OrangeFox / TWRP Specific Flags
 TW_THEME := portrait_hd
 TW_EXTRA_LANGUAGES := true
