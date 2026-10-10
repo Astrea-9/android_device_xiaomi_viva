@@ -1,20 +1,15 @@
-# Inherit from common AOSP / Omni config
-$(call inherit-product, $(SRC_TARGET_DIR)/product/aosp_base.mk)
+$(call inherit-product, $(SRC_TARGET_DIR)/product/core_64_bit_only.mk)
+$(call inherit-product, $(SRC_TARGET_DIR)/product/full_base_telephony.mk)
+$(call inherit-product, $(SRC_TARGET_DIR)/product/virtual_ab_ota.mk)
 
-# Inherit OrangeFox configuration
-$(call inherit-product, vendor/fox/config/common.mk)
+# TWRP/OrangeFox ortak ayarlari (vendor/fox degil, vendor/twrp)
+$(call inherit-product, vendor/twrp/config/common.mk)
 
-PRODUCT_NAME := fox_viva
+PRODUCT_USE_DYNAMIC_PARTITIONS := true
+PRODUCT_SHIPPING_API_LEVEL := 30
+
 PRODUCT_DEVICE := viva
-PRODUCT_BRAND := Redmi
-PRODUCT_MODEL := Redmi Note 11 Pro 4G
+PRODUCT_NAME := fox_viva
+PRODUCT_BRAND := Xiaomi
+PRODUCT_MODEL := Redmi Note 11 Pro
 PRODUCT_MANUFACTURER := Xiaomi
-
-# OrangeFox Build Vars
-FOX_BUILD_TYPE := Unofficially
-OF_KEEP_FORCED_ENCRYPTION := true
-OF_USE_GREEN_LED := false
-OF_SCREEN_H := 2400
-OF_STATUS_H := 80
-OF_STATUS_INDENT_LEFT := 48
-OF_STATUS_INDENT_RIGHT := 48
