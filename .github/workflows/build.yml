@@ -31,7 +31,7 @@ jobs:
           curl https://storage.googleapis.com/git-repo-downloads/repo > ~/.bin/repo
           chmod a+rx ~/.bin/repo
 
-      - name: Initialize OrangeFox Manifest and Sync
+      - name: Initialize Manifest and Sync
         run: |
           export PATH="${HOME}/.bin:${PATH}"
           git config --global user.name "GitHub Actions"
@@ -41,6 +41,11 @@ jobs:
           cd ~/fox
           repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-12.1
           repo sync -j$(nproc --all) --force-sync
+
+      - name: Clone OrangeFox Vendor Files
+        run: |
+          cd ~/fox
+          git clone https://gitlab.com/OrangeFox/vendor/recovery.git vendor/fox -b fox_12.1 --depth=1 || git clone https://gitlab.com/OrangeFox/vendor/recovery.git vendor/fox --depth=1
 
       - name: Setup Device Tree in Source
         run: |
