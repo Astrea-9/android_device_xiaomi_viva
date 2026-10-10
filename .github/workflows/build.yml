@@ -45,7 +45,7 @@ jobs:
       - name: Clone OrangeFox Vendor Files
         run: |
           cd ~/fox
-          git clone https://gitlab.com/OrangeFox/vendor/recovery.git vendor/fox -b fox_12.1 --depth=1 || git clone https://gitlab.com/OrangeFox/vendor/recovery.git vendor/fox --depth=1
+          git clone https://gitlab.com/OrangeFox/vendor/recovery.git vendor/fox -b 12.1 --depth=1 || git clone https://gitlab.com/OrangeFox/vendor/recovery.git vendor/fox --depth=1
 
       - name: Setup Device Tree in Source
         run: |
