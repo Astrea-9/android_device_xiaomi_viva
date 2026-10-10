@@ -2,63 +2,180 @@ name: Build OrangeFox for Viva
 
 on:
   workflow_dispatch:
+    inputs:
+      manifest_branch:
+        description: "OrangeFox dalı (orangefox_sync.sh --branch değeri)"
+        required: true
+        default: "12.1"
+      device_name:
+        description: "Cihaz kod adı"
+        required: true
+        default: "viva"
+      device_path:
+        description: "Cihaz ağacının kaynak içindeki yeri"
+        required: true
+        default: "device/xiaomi/viva"
+      makefile_name:
+        description: "lunch adı (AndroidProducts.mk içindeki fox_viva)"
+        required: true
+        default: "fox_viva"
+      build_target:
+        description: "Derleme hedefi (viva'da recovery ayrı bölüm değil, boot içine kuruluyor)"
+        required: true
+        type: choice
+        default: boot
+        options:
+          - boot
+          - recovery
+          - vendorboot
+      skip_kernel_check:
+        description: "Kernel tanımı kontrolünü atla (tavsiye edilmez)"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  MANIFEST_BRANCH: ${{ inputs.manifest_branch }}
+  DEVICE_NAME: ${{ inputs.device_name }}
+  DEVICE_PATH: ${{ inputs.device_path }}
+  MAKEFILE_NAME: ${{ inputs.makefile_name }}
+  BUILD_TARGET: ${{ inputs.build_target }}
 
 jobs:
   build:
     runs-on: ubuntu-22.04
+    timeout-minutes: 350
+    defaults:
+      run:
+        shell: bash
+
     steps:
+      - name: Free Disk Space
+        uses: easimon/maximize-build-space@master
+        with:
+          root-reserve-mb: 4096
+          swap-size-mb: 4096
+          remove-dotnet: "true"
+          remove-android: "true"
+          remove-haskell: "true"
+          remove-codeql: "true"
+          remove-docker-images: "true"
+
       - name: Checkout Device Tree
         uses: actions/checkout@v4
+        with:
+          path: device-tree
 
-      - name: Free Disk Space
+      - name: Check kernel definition
+        if: ${{ !inputs.skip_kernel_check }}
         run: |
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /opt/ghc
-          sudo rm -rf "/usr/local/share/boost"
-          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
-          sudo apt-get clean
-          df -h
+          if ! grep -rqE 'TARGET_PREBUILT_KERNEL|TARGET_KERNEL_SOURCE' device-tree --include='*.mk'; then
+            echo "::error::Cihaz ağacında kernel tanımı yok (TARGET_PREBUILT_KERNEL veya TARGET_KERNEL_SOURCE)."
+            echo "::error::Stock boot.img'den ağaç üretin (twrpdtgen) ya da kontrolü bilerek atlayın."
+            exit 1
+          fi
 
       - name: Install Build Dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses5-dev lib32readline-dev lib32z1-dev liblz4-tool libncurses5 libncurses5-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc yasm zlib1g-dev zip python3
+          git clone --depth 1 https://gitlab.com/OrangeFox/misc/scripts "$RUNNER_TEMP/fox-scripts"
+          cd "$RUNNER_TEMP/fox-scripts"
+          sudo env DEBIAN_FRONTEND=noninteractive bash setup/android_build_env.sh
 
       - name: Install Repo Tool
         run: |
-          mkdir -p ~/.bin
-          PATH="${HOME}/.bin:${PATH}"
-          curl https://storage.googleapis.com/git-repo-downloads/repo > ~/.bin/repo
-          chmod a+rx ~/.bin/repo
+          git config --global user.name "github-actions"
+          git config --global user.email "actions@users.noreply.github.com"
+          git config --global color.ui false
+          if ! command -v repo >/dev/null 2>&1; then
+            mkdir -p "$HOME/.bin"
+            curl -fsSL https://storage.googleapis.com/git-repo-downloads/repo -o "$HOME/.bin/repo"
+            chmod a+rx "$HOME/.bin/repo"
+            echo "$HOME/.bin" >> "$GITHUB_PATH"
+          fi
 
-      - name: Initialize OrangeFox Manifest and Sync
+      - name: Sync OrangeFox Sources
         run: |
-          export PATH="${HOME}/.bin:${PATH}"
-          git config --global user.name "GitHub Actions"
-          git config --global user.email "actions@github.com"
-          
-          mkdir -p ~/fox
-          cd ~/fox
-          repo init -u https://gitlab.com/OrangeFox/Manifest.git -b fox_12.1 --depth=1
-          repo sync -j$(nproc --all) --force-sync --no-clone-bundle --no-tags
+          echo "FOX_DIR=$GITHUB_WORKSPACE/fox_$MANIFEST_BRANCH" >> "$GITHUB_ENV"
+          git clone https://gitlab.com/OrangeFox/sync.git "$RUNNER_TEMP/fox-sync"
+          cd "$RUNNER_TEMP/fox-sync"
+          bash ./orangefox_sync.sh --branch "$MANIFEST_BRANCH" --path "$GITHUB_WORKSPACE/fox_$MANIFEST_BRANCH"
 
       - name: Setup Device Tree in Source
         run: |
-          mkdir -p ~/fox/device/xiaomi/
-          cp -r $GITHUB_WORKSPACE ~/fox/device/xiaomi/viva
+          mkdir -p "$FOX_DIR/$DEVICE_PATH"
+          rsync -a --exclude='.git' --exclude='.github' device-tree/ "$FOX_DIR/$DEVICE_PATH/"
+          ls -la "$FOX_DIR/$DEVICE_PATH"
+
+      - name: Fix vendor path in makefile
+        run: |
+          cd "$FOX_DIR"
+          echo "== vendor/ =="; ls vendor
+          echo "== common.mk adayları =="; find vendor -maxdepth 4 -name common.mk -path '*config*' || true
+          MK="$DEVICE_PATH/$MAKEFILE_NAME.mk"
+          REF=$(grep -oE 'vendor/[A-Za-z0-9_./-]+/config/common\.mk' "$MK" | head -n1 || true)
+          if [ -n "$REF" ] && [ ! -f "$REF" ]; then
+            FIXED=0
+            for c in vendor/twrp/config/common.mk vendor/recovery/config/common.mk; do
+              if [ -f "$c" ]; then
+                echo "::warning::$MK içindeki $REF bulunamadı, $c kullanılıyor"
+                sed -i "s#$REF#$c#" "$MK"
+                FIXED=1
+                break
+              fi
+            done
+            if [ "$FIXED" = "0" ]; then
+              echo "::error::$REF yok ve yerine koyulacak common.mk bulunamadı. Yukarıdaki listeye bakın."
+              exit 1
+            fi
+          fi
+          grep -n 'inherit-product' "$MK"
 
       - name: Start Building OrangeFox
         run: |
-          export PATH="${HOME}/.bin:${PATH}"
-          cd ~/fox
-          source build/envsetup.sh
+          cd "$FOX_DIR"
+          export LC_ALL=C
           export ALLOW_MISSING_DEPENDENCIES=true
-          lunch fox_viva-eng
-          mka recoveryimage
+          export FOX_BUILD_DEVICE="$DEVICE_NAME"
+
+          export OF_KEEP_FORCED_ENCRYPTION=1
+          export OF_USE_GREEN_LED=0
+          export OF_SCREEN_H=2400
+          export OF_STATUS_H=80
+          export OF_STATUS_INDENT_LEFT=48
+          export OF_STATUS_INDENT_RIGHT=48
+
+          # Cihazınız A/B ise açın (emin olmadan açmayın):
+          # export FOX_AB_DEVICE=1
+          # export FOX_VIRTUAL_AB_DEVICE=1
+
+          source build/envsetup.sh
+          lunch "${MAKEFILE_NAME}-eng"
+          mka adbd "${BUILD_TARGET}image" 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
+
+      - name: Collect Output
+        run: |
+          OUT="$FOX_DIR/out/target/product/$DEVICE_NAME"
+          mkdir -p "$GITHUB_WORKSPACE/output"
+          find "$OUT" -maxdepth 1 \( -name 'OrangeFox*.img' -o -name 'OrangeFox*.zip' -o -name 'boot.img' -o -name 'recovery.img' -o -name 'vendor_boot.img' \) -exec cp -v {} "$GITHUB_WORKSPACE/output/" \;
+          ls -lh "$GITHUB_WORKSPACE/output"
+          test -n "$(ls -A "$GITHUB_WORKSPACE/output")"
 
       - name: Upload Recovery Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: OrangeFox-viva-BootImage
-          path: ~/fox/out/target/product/viva/boot.img
-          
+          name: orangefox-${{ inputs.device_name }}
+          path: output/*
+          if-no-files-found: error
+
+      - name: Upload Build Logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: |
+            build.log
+            ${{ env.FOX_DIR }}/out/error.log
+          if-no-files-found: ignore
