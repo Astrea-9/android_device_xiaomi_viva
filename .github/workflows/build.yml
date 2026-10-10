@@ -1,0 +1,64 @@
+name: Build OrangeFox for Viva
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout Device Tree
+        uses: actions/checkout@v4
+
+      - name: Maximize Disk Space
+        uses: easimon/maximize-disk-space-action@master
+        with:
+          root-reserve-mb: 512
+          swap-size-mb: 1024
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+          remove-codeql: 'true'
+
+      - name: Install Build Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses5-dev lib32readline-dev lib32z1-dev liblz4-tool libncurses5 libncurses5-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc yasm zlib1g-dev zip python3
+
+      - name: Install Repo Tool
+        run: |
+          mkdir -p ~/.bin
+          PATH="${HOME}/.bin:${PATH}"
+          curl https://storage.googleapis.com/git-repo-downloads/repo > ~/.bin/repo
+          chmod a+rx ~/.bin/repo
+
+      - name: Initialize OrangeFox Manifest and Sync
+        run: |
+          export PATH="${HOME}/.bin:${PATH}"
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+          
+          mkdir -p ~/fox
+          cd ~/fox
+          repo init -u https://gitlab.com/OrangeFox/Manifest.git -b fox_12.1 --depth=1
+          repo sync -j$(nproc --all) --force-sync
+
+      - name: Setup Device Tree in Source
+        run: |
+          mkdir -p ~/fox/device/xiaomi/
+          cp -r $GITHUB_WORKSPACE ~/fox/device/xiaomi/viva
+
+      - name: Start Building OrangeFox
+        run: |
+          export PATH="${HOME}/.bin:${PATH}"
+          cd ~/fox
+          source build/envsetup.sh
+          export ALLOW_MISSING_DEPENDENCIES=true
+          lunch fox_viva-eng
+          mka recoveryimage
+
+      - name: Upload Recovery Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: OrangeFox-viva-BootImage
+          path: ~/fox/out/target/product/viva/boot.img
