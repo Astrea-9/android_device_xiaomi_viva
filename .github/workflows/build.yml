@@ -69,12 +69,12 @@ jobs:
         with:
           path: device-tree
 
-      - name: Check kernel definition
+            - name: Check kernel files
         if: ${{ !inputs.skip_kernel_check }}
         run: |
-          if ! grep -rqE 'TARGET_PREBUILT_KERNEL|TARGET_KERNEL_SOURCE' device-tree --include='*.mk'; then
-            echo "::error::Cihaz ağacında kernel tanımı yok (TARGET_PREBUILT_KERNEL veya TARGET_KERNEL_SOURCE)."
-            echo "::error::Stock boot.img'den ağaç üretin (twrpdtgen) ya da kontrolü bilerek atlayın."
+          if [ ! -f device-tree/prebuilt/Image.gz ] || ! ls device-tree/prebuilt/dtb/*.dtb >/dev/null 2>&1; then
+            echo "::error::prebuilt/Image.gz veya prebuilt/dtb/*.dtb yok."
+            echo "::error::Stock boot.img'den çıkardığınız kernel ve dtb dosyalarını cihaz ağacındaki prebuilt/ klasörüne koyun."
             exit 1
           fi
 
@@ -147,9 +147,8 @@ jobs:
           export OF_STATUS_INDENT_LEFT=48
           export OF_STATUS_INDENT_RIGHT=48
 
-          # Cihazınız A/B ise açın (emin olmadan açmayın):
-          # export FOX_AB_DEVICE=1
-          # export FOX_VIRTUAL_AB_DEVICE=1
+          export FOX_AB_DEVICE=1
+          export FOX_VIRTUAL_AB_DEVICE=1
 
           source build/envsetup.sh
           lunch "${MAKEFILE_NAME}-eng"
